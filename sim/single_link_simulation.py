@@ -9,18 +9,16 @@ from random import expovariate as exprnd
 
 # Sim: global simulation class
 class Sim:
-    # class variables
+    default_size = 10
     t = 0  # simulation time
     evQ = PrioQ()  # initialize emt
     stop = False
 
-    # constructor
     def __init__(self):
         Sim.evQ = PrioQ()
         Sim.t = 0
         Sim.stop = False
 
-    # run method
     @staticmethod
     def run():
         while not Sim.evQ.empty():
@@ -30,10 +28,9 @@ class Sim:
             if Sim.stop:
                 break
 
-    # stop method
     @staticmethod
-    def stop():
-        pass  # needs to be implemented
+    def stop_sim():
+        Sim.evQ.queue.clear()
 
 
 @total_ordering  # provides all ordering functions if __lt__ and __eq__ are given
@@ -42,8 +39,7 @@ class Event:
     n = 0  # event counter
 
     # constructor
-    def __init__(self, t, prio, fun, args=[]):  # assigns an empty list as default value to argument args
-        # instance attributes
+    def __init__(self, t, prio, fun, args=[]):
         self.t = t  # event time
         self.prio = prio  # event priority
         self.n = Event.n  # event number (generated from class attribute)
@@ -58,12 +54,18 @@ class Event:
     def __eq__(self, other):
         return (self.t, self.prio) == (other.t, other.prio)
 
+    # fallback implementation
+    def work(self):
+        print("Event", self.n, "- time", self.t, "- priority", self.prio,
+              "- function", self.fun.__name__, "- args", self.args)
 
-# define event classes (reason for event classes is to
-# - define priorities for ordering
-# - define names for printing debug/simulation information
 
-
+# NewPacketEvent
+# – an der Quelle entsteht eine neues Paket mit eine Größe entsprechend der Funktion packet_size_fun()
+# – die Quelle übergibt das Paket an das nächste Element, in unserem Fall dem Link
+# – es wird das nächste NewPacketEvent erzeugt, die Zeit zum nächsten NewPacketEvent wird mit der
+# Funktion iat_fun() berechnet
+# – eventuell werden Statistiken erfasst oder Debug-Informationen ausgegeben
 class NewPacketEvent(Event):
     prio = 3
     name = 'NewPacketEvent'
@@ -73,7 +75,15 @@ class NewPacketEvent(Event):
         # general: use super() to call method from upper class
         super().__init__(t, NewPacketEvent.prio, fun, args)
 
+    def work(self):
+        super().work()
+        Sim.evQ.put(Source(self.name + " - Arrival", 2, Sim.default_size, None).new_packet())
 
+
+# PacketArrivalEvent
+# – ein PacketArrivalEvent wird ausgelöst, wenn ein Paket an einem Netzknoten – in unserem Fall nur der Senke ankommt
+# – eventuell werden Statistiken erfasst oder Debug-Informationen ausgegeben
+# – ansonsten passiert nichts
 class PacketArrivalEvent(Event):
     prio = 2
     name = 'PacketArrivalEvent'
@@ -82,6 +92,13 @@ class PacketArrivalEvent(Event):
         super().__init__(t, PacketArrivalEvent.prio, fun, args)
 
 
+# PacketDepartureEvent
+# – ein PacketDepartureEvent wird ausgelöst, wenn ein Link die Übertragung eines Pakets beendet hat und das
+# Paket nach der Ausbreitungsverzögerung am nächsten Netzknoten (in unserem Fall der Senke) ankommt
+# – es wird ein PacketArrivalEvent an der Senke erzeugt, das nach Zeit t+Ausbreitungsverzögerung eintritt
+# – wenn ein weiteres Paket im Puffer auf die Übertragung wartet, wird ein PacketDepartureEvent erzeugt, das
+# nach Zeit t+Übertragungsverzögerung für das Pakter eintritt
+# – eventuell werden Statistiken erfasst oder Debug-Informationen ausgegeben
 class PacketDepartureEvent(Event):
     prio = 1
     name = 'PacketDepartureEvent'
@@ -90,8 +107,12 @@ class PacketDepartureEvent(Event):
         super().__init__(t, PacketDepartureEvent.prio, fun, args)
 
 
+# StopEvent
+# – das StopEvent beendet die Simulation
+# – eventuell werden Statistiken ausgewertet und ausgegeben
 class StopEvent(Event):
-    pass  # needs to be implemented
+    def work(self):
+        Sim.stop_sim()
 
 
 class Packet:
